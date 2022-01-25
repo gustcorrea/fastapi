@@ -111,10 +111,7 @@ def get_param_sub_dependant(
     *, param: inspect.Parameter, path: str, security_scopes: Optional[List[str]] = None
 ) -> Dependant:
     depends: params.Depends = param.default
-    if depends.dependency:
-        dependency = depends.dependency
-    else:
-        dependency = param.annotation
+    dependency = depends.dependency or param.annotation
     return get_sub_dependant(
         depends=depends,
         dependency=dependency,
@@ -222,9 +219,10 @@ def is_scalar_field(field: ModelField) -> bool:
         and not isinstance(field_info, params.Body)
     ):
         return False
-    if field.sub_fields:
-        if not all(is_scalar_field(f) for f in field.sub_fields):
-            return False
+    if field.sub_fields and not all(
+        is_scalar_field(f) for f in field.sub_fields
+    ):
+        return False
     return True
 
 
@@ -254,8 +252,7 @@ def get_typed_signature(call: Callable[..., Any]) -> inspect.Signature:
         )
         for param in signature.parameters.values()
     ]
-    typed_signature = inspect.Signature(typed_params)
-    return typed_signature
+    return inspect.Signature(typed_params)
 
 
 def get_typed_annotation(param: inspect.Parameter, globalns: Dict[str, Any]) -> Any:
@@ -294,10 +291,7 @@ def get_dependant(
             assert is_scalar_field(
                 field=param_field
             ), "Path params must be of one of the supported types"
-            if isinstance(param.default, params.Path):
-                ignore_default = False
-            else:
-                ignore_default = True
+            ignore_default = not isinstance(param.default, params.Path)
             param_field = get_param_field(
                 param=param,
                 param_name=param_name,
@@ -355,7 +349,7 @@ def get_param_field(
 ) -> ModelField:
     default_value = Required
     had_schema = False
-    if not param.default == param.empty and ignore_default is False:
+    if param.default != param.empty and not ignore_default:
         default_value = param.default
     if isinstance(default_value, FieldInfo):
         had_schema = True
@@ -372,7 +366,7 @@ def get_param_field(
         field_info = default_field_info(default_value)
     required = default_value == Required
     annotation: Any = Any
-    if not param.annotation == param.empty:
+    if param.annotation != param.empty:
         annotation = param.annotation
     annotation = get_annotation_from_field_info(annotation, field_info, param_name)
     if not field_info.alias and getattr(field_info, "convert_underscores", None):
@@ -697,8 +691,7 @@ async def request_body_to_args(
 
 
 def get_missing_field_error(loc: Tuple[str, ...]) -> ErrorWrapper:
-    missing_field_error = ErrorWrapper(MissingError(), loc=loc)
-    return missing_field_error
+    return ErrorWrapper(MissingError(), loc=loc)
 
 
 def get_schema_compatible_field(*, field: ModelField) -> ModelField:
