@@ -146,9 +146,7 @@ def generate_operation_id(*, route: routing.APIRoute, method: str) -> str:
 
 
 def generate_operation_summary(*, route: routing.APIRoute, method: str) -> str:
-    if route.summary:
-        return route.summary
-    return route.name.replace("_", " ").title()
+    return route.summary or route.name.replace("_", " ").title()
 
 
 def get_openapi_operation_metadata(
@@ -201,10 +199,9 @@ def get_openapi_path(
                     {param["name"]: param for param in parameters}.values()
                 )
             if method in METHODS_WITH_BODY:
-                request_body_oai = get_openapi_operation_request_body(
+                if request_body_oai := get_openapi_operation_request_body(
                     body_field=route.body_field, model_name_map=model_name_map
-                )
-                if request_body_oai:
+                ):
                     operation["requestBody"] = request_body_oai
             if route.callbacks:
                 callbacks = {}
@@ -229,9 +226,10 @@ def get_openapi_path(
                 # responses in Starlette
                 response_signature = inspect.signature(current_response_class.__init__)
                 status_code_param = response_signature.parameters.get("status_code")
-                if status_code_param is not None:
-                    if isinstance(status_code_param.default, int):
-                        status_code = str(status_code_param.default)
+                if status_code_param is not None and isinstance(
+                    status_code_param.default, int
+                ):
+                    status_code = str(status_code_param.default)
             operation.setdefault("responses", {}).setdefault(status_code, {})[
                 "description"
             ] = route.response_description
@@ -296,11 +294,9 @@ def get_openapi_path(
                     deep_dict_update(openapi_response, process_response)
                     openapi_response["description"] = description
             http422 = str(HTTP_422_UNPROCESSABLE_ENTITY)
-            if (all_route_params or route.body_field) and not any(
-                [
-                    status in operation["responses"]
-                    for status in [http422, "4XX", "default"]
-                ]
+            if ((all_route_params or route.body_field)) and all(
+                status not in operation["responses"]
+                for status in [http422, "4XX", "default"]
             ):
                 operation["responses"][http422] = {
                     "description": "Validation Error",
@@ -348,11 +344,12 @@ def get_flat_models_from_routes(
             params = get_flat_params(route.dependant)
             request_fields_from_routes.extend(params)
 
-    flat_models = callback_flat_models | get_flat_models_from_fields(
-        body_fields_from_routes + responses_from_routes + request_fields_from_routes,
+    return callback_flat_models | get_flat_models_from_fields(
+        body_fields_from_routes
+        + responses_from_routes
+        + request_fields_from_routes,
         known_models=set(),
     )
-    return flat_models
 
 
 def get_openapi(
@@ -389,8 +386,9 @@ def get_openapi(
     )
     for route in routes:
         if isinstance(route, routing.APIRoute):
-            result = get_openapi_path(route=route, model_name_map=model_name_map)
-            if result:
+            if result := get_openapi_path(
+                route=route, model_name_map=model_name_map
+            ):
                 path, security_schemes, path_definitions = result
                 if path:
                     paths.setdefault(route.path_format, {}).update(path)
